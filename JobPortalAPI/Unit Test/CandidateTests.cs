@@ -1,5 +1,4 @@
 ﻿using JobPortalAPI.Controllers;
-using JobPortalAPI.Data;
 using JobPortalAPI.Entity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;

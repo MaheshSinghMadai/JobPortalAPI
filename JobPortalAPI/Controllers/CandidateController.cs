@@ -13,28 +13,6 @@ namespace JobPortalAPI.Controllers
         CandidateCacheService _candidateService,
         ILogger _logger) : ControllerBase
     {
-        [HttpGet]
-        [Route("[action]")]
-        public IActionResult GetAllCandidates()
-        {
-            var candidates = _candidateService.GetAllCandidates();
-            return Ok(candidates);
-
-        }
-
-        [HttpGet]
-        [Route("[action]")]
-        public IActionResult GetCandidateByEmail(string email)
-        {
-            var candidate = _candidateService.GetCandidateByEmail(email);
-            if (candidate == null)
-            {
-                return NotFound("Candidate not found");
-            }
-
-            return Ok(candidate);
-        }
-
         [HttpPost]
         [Route("[action]")]
         public async Task<ActionResult<Candidate>> AddOrUpdateCandidateInformation(Candidate candidate)
@@ -55,11 +33,33 @@ namespace JobPortalAPI.Controllers
 
                 return Ok(candidate);
             }
-            catch (DbUpdateException dbEx)
+            catch (DbUpdateException ex)
             {
-                _logger.LogError(dbEx, "Database update error occurred.");
-                return StatusCode(500, "An error occurred while updating the database. Please try again later.");
+                _logger.LogError(ex, "Database update error occurred.");
+                return StatusCode(500, "An error occurred while updating the database. Please try again.");
             }
+        }
+
+        //for caching implementation
+        [HttpGet]
+        [Route("[action]")]
+        public IActionResult GetAllCandidates()
+        {
+            var candidates = _candidateService.GetAllCandidates();
+            return Ok(candidates);
+        }
+
+        [HttpGet]
+        [Route("[action]")]
+        public IActionResult GetCandidateByEmail(string email)
+        {
+            var candidate = _candidateService.GetCandidateByEmail(email);
+            if (candidate == null)
+            {
+                return NotFound("Candidate not found");
+            }
+
+            return Ok(candidate);
         }
 
         private bool candidateExists(string email)

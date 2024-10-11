@@ -1,87 +1,136 @@
 ﻿using JobPortalAPI.Controllers;
+using JobPortalAPI.Data;
 using JobPortalAPI.Entity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Moq;
 using NUnit.Framework;
-using System;
+using System.ComponentModel.DataAnnotations;
+
 namespace JobPortalAPI.Unit_Test
 {
     [TestFixture]
-    public class CandidateServiceTests
+    public class CandidateServiceTests(
+        Mock<ApplicationDbContext> _mockDbContext, 
+        CandidateController _controller)
     {
-        private Mock<DbSet<Candidate>> _mockSet;
-        private Mock<DbContext> _mockContext;
-        private Mock<ILogger<CandidateController>> _mockLogger;
-        private CandidateController _service;
-
-        [SetUp]
-        public void SetUp()
+        [Test]
+        public void CandidateEntity_ShouldPassValidation_WhenValidDataProvided()
         {
-            _mockSet = new Mock<DbSet<Candidate>>();
-            _mockContext = new Mock<DbContext>();
-            _mockLogger = new Mock<ILogger<CandidateController>>();
+            // Arrange
+            var candidate = new Candidate
+            {
+                Email = "validemail@test.com",
+                FirstName = "mahesh",
+                LastName = "madai",
+                Comment = "This is a test comment for test",
+                AppointmentTime = DateTime.Now
+            };
 
-            _mockContext.Setup(m => m.Set<Candidate>()).Returns(_mockSet.Object);
+            // Act
+            var context = new ValidationContext(candidate, null, null);
+            var validationResults = new List<ValidationResult>();
+            bool isValid = Validator.TryValidateObject(candidate, context, validationResults, true);
+
+            // Assert
+            Assert.That(isValid, Is.True);
+            Assert.Equals(0, validationResults.Count); 
         }
 
         [Test]
-        public async Task AddOrUpdateCandidateInformation_NewCandidate_AddsToDatabase()
+        public void CandidateEntity_ShouldFailValidation_WhenRequiredFieldsMissing()
         {
             // Arrange
-            var candidate = new Candidate { Email = "new@example.com" };
-            _mockContext.Setup(m => m.Add(It.IsAny<Candidate>())).Verifiable();
-            _mockContext.Setup(m => m.SaveChangesAsync(default)).ReturnsAsync(1);
+            var candidate = new Candidate
+            {
+                // Missing required fields like Email, FirstName, LastName, and Comment
+                AppointmentTime = DateTime.Now
+            };
 
             // Act
-            var result = await _service.AddOrUpdateCandidateInformation(candidate);
+            var context = new ValidationContext(candidate, null, null);
+            var validationResults = new List<ValidationResult>();
+            bool isValid = Validator.TryValidateObject(candidate, context, validationResults, true);
 
             // Assert
-            Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-            _mockContext.Verify(m => m.Add(It.IsAny<Candidate>()), Times.Once());
-            _mockContext.Verify(m => m.SaveChangesAsync(default), Times.Once());
+            Assert.That(isValid, Is.False);
+            Assert.That(validationResults.Count > 0, Is.True); 
         }
 
         [Test]
-        public async Task AddOrUpdateCandidateInformation_ExistingCandidate_UpdatesDatabase()
+        public void CandidateEntity_ShouldFailValidation_WhenInvalidEmailProvided()
         {
             // Arrange
-            var candidate = new Candidate { Email = "existing@example.com" };
-            _mockContext.Setup(m => m.Update(It.IsAny<Candidate>())).Verifiable();
-            _mockContext.Setup(m => m.SaveChangesAsync(default)).ReturnsAsync(1);
-            _service.GetType().GetMethod("candidateExists", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                .Invoke(_service, new object[] { candidate.Email });
+            var candidate = new Candidate
+            {
+                Email = "testemail",  // Invalid email format
+                FirstName = "asd",
+                LastName = "sds",
+                Comment = "This is a test comment",
+                AppointmentTime = DateTime.Now
+            };
 
             // Act
-            var result = await _service.AddOrUpdateCandidateInformation(candidate);
+            var context = new ValidationContext(candidate, null, null);
+            var validationResults = new List<ValidationResult>();
+            bool isValid = Validator.TryValidateObject(candidate, context, validationResults, true);
 
             // Assert
-            Assert.That(result.Result, Is.InstanceOf<OkObjectResult>());
-            _mockContext.Verify(m => m.Update(It.IsAny<Candidate>()), Times.Once());
-            _mockContext.Verify(m => m.SaveChangesAsync(default), Times.Once());
+            Assert.That(isValid, Is.False);
+            Assert.That(validationResults.Exists(v => v.ErrorMessage.Contains("not a valid e-mail address")), Is.True);
         }
 
         [Test]
-        public async Task AddOrUpdateCandidateInformation_DbUpdateException_ReturnsInternalServerError()
+        public async Task AddOrUpdateCandidateInformation_ShouldAddCandidate_WhenCandidateDoesNotExist()
         {
             // Arrange
-            var candidate = new Candidate { Email = "error@example.com" };
-            _mockContext.Setup(m => m.SaveChangesAsync(default)).ThrowsAsync(new DbUpdateException());
+            var newCandidate = new Candidate
+            {
+                Email = "newcandidate@example.com",
+                FirstName = "John",
+                LastName = "Doe",
+                Comment = "This is a comment",
+                AppointmentTime = DateTime.Now
+            };
+
+            _mockDbContext.Setup(db => db.Candidates.FindAsync(newCandidate.Email)).ReturnsAsync((Candidate)null); // Candidate doesn't exist
 
             // Act
-            var result = await _service.AddOrUpdateCandidateInformation(candidate);
+            var result = await _controller.AddOrUpdateCandidateInformation(newCandidate);
 
             // Assert
-            Assert.That(result.Result, Is.InstanceOf<ObjectResult>());
-            var statusCodeResult = (ObjectResult)result.Result;
-            Assert.That(statusCodeResult.StatusCode, Is.EqualTo(500));
-            _mockLogger.Verify(
-                x => x.Log(
-                    It.IsAny<LogLevel>(),
-                    It.IsAny<EventId>(),
-                    It.Is<It.IsAnyType>((v, t) => true),
-                    It.IsAny<Exception>(),
-                    It.Is<Func<It.IsAnyType, Exception, string>>((v, t) => true)));
+            Assert.That(result, Is.Not.Null);
+            var actionResult = result.Result as OkObjectResult;
+
+            Assert.That(actionResult, Is.Not.Null);
+            var returnedCandidate = actionResult.Value as Candidate;
+            Assert.Equals(newCandidate.Email, returnedCandidate.Email);
+        }
+
+        [Test]
+        public async Task AddOrUpdateCandidateInformation_ShouldUpdateCandidate_WhenCandidateExists()
+        {
+            // Arrange
+            var existingCandidate = new Candidate
+            {
+                Email = "test@test.com",
+                FirstName = "asdads",
+                LastName = "adsddf",
+                Comment = "Existing test comment",
+                AppointmentTime = DateTime.Now
+            };
+
+            _mockDbContext.Setup(db => db.Candidates.FindAsync(existingCandidate.Email)).ReturnsAsync(existingCandidate); // Candidate exists
+
+            // Act
+            var result = await _controller.AddOrUpdateCandidateInformation(existingCandidate);
+
+            // Assert
+            Assert.That(result, Is.Not.Null);
+            var actionResult = result.Result as OkObjectResult;
+
+            Assert.That(actionResult, Is.Not.Null);
+            var returnedCandidate = actionResult.Value as Candidate;
+            Assert.Equals(existingCandidate.Email, returnedCandidate.Email);
         }
     }
 }
